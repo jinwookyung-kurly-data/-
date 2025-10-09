@@ -1,73 +1,219 @@
-# ==============================
-# 🧮 귀책 제외 What-if 시뮬레이터
-# ==============================
-st.markdown("### 🧮 귀책 제외 What-if (선택한 귀책이 **발생하지 않았다**고 가정)")
+# -*- coding: utf-8 -*-
+import io, re
+from datetime import datetime, date, timedelta
+import chardet
+import pandas as pd
+import plotly.express as px
+import requests
+import streamlit as st
 
-# 현재 데이터에 존재하는 귀책 목록(정렬)
+# ==============================
+# 상수 / 경로
+# ==============================
+TARGET_OCHUL = 0.00019   # 0.019%
+TARGET_NUL   = 0.00041   # 0.041%
+OCHUL_STATUS = "교차오배분"   # 오출 산정 기준
+NUL_STATUS   = "생산누락"     # 누락 산정 기준
+OF_LABEL     = "OF귀책"       # 실제율 기준 귀책
+
+DATA_URL   = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/오출자동화_test_927.csv"
+TOTALS_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/total.csv"
+
+# ==============================
+# 유틸
+# ==============================
+def load_csv_safely(url: str) -> pd.DataFrame:
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        raw = r.content
+        enc = (chardet.detect(raw).get("encoding") or "utf-8")
+        text = raw.decode(enc, errors="replace")
+        return pd.read_csv(io.StringIO(text))
+    except Exception as e:
+        st.warning(f"⚠️ {url} 로드 실패: {e}")
+        return pd.DataFrame()
+
+def parse_korean_date(q: str, available_dates: list[date]) -> date | None:
+    if not q: return None
+    q = q.strip()
+    today = datetime.today().date()
+    if "오늘" in q:  return today
+    if "어제" in q:  return today - timedelta(days=1)
+    if "그제" in q or "그저께" in q: return today - timedelta(days=2)
+    m = re.search(r"(\d{4})[.\-\/]\s?(\d{1,2})[.\-\/]\s?(\d{1,2})", q) or re.search(r"(\d{4})(\d{2})(\d{2})", q)
+    if m:
+        y, mth, d = map(int, m.groups())
+        try:
+            want = date(y, mth, d)
+        except ValueError:
+            return None
+        return want if want in available_dates else (min(available_dates, key=lambda x: abs(x - want)) if available_dates else None)
+    return None
+
+def pct(x: float) -> str: return f"{x*100:.3f}%"
+def pp(x: float)  -> str: return f"{x*100:+.3f} pp"
+
+# ==============================
+# 페이지 설정
+# ==============================
+st.set_page_config(page_title="누락 현황 대시보드", layout="wide")
+st.title("🎯 누락 현황 대시보드 (자연어 + total.csv 연동 + 귀책 제외 & 사유 TOP)")
+
+st.caption("오출=교차오배분, 누락=생산누락. **실제율=OF귀책만**, **추정율=전체 기준**. "
+           "분모(전체 유닛)는 `total.csv`의 `Total_unit`을 우선 사용합니다.")
+
+# ==============================
+# 데이터 로드
+# ==============================
+uploaded = st.file_uploader("CSV 업로드 (헤더: 날짜,주문번호,유닛,타입,상태,포장완료시간,분류완료시간,포장작업자,풋월작업자,사유,귀책)", type=["csv"])
+df = pd.read_csv(uploaded, encoding="utf-8-sig") if uploaded else load_csv_safely(DATA_URL)
+st.info("샘플 데이터를 사용합니다.") if uploaded is None else st.success("업로드된 파일 사용 중.")
+
+# 컬럼 정규화
+rename_map = {"포장완료로":"포장완료시간","분류완료로":"분류완료시간","포장완료":"포장완료시간","분류완료":"분류완료시간"}
+df.rename(columns=rename_map, inplace=True)
+df.columns = df.columns.str.replace("\ufeff","",regex=True).str.strip()
+
+expected = ["날짜","주문번호","유닛","타입","상태","포장완료시간","분류완료시간","포장작업자","풋월작업자","사유","귀책"]
+missing = [c for c in expected if c not in df.columns]
+if missing:
+    st.error(f"❌ CSV 헤더 형식 불일치\n빠진 컬럼: {missing}\n감지된 헤더: {list(df.columns)}")
+    st.stop()
+
+df["유닛"] = pd.to_numeric(df["유닛"], errors="coerce").fillna(0).astype(int)
+df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce").dt.date
+df["is_ochul"] = df["상태"].astype(str).str.contains(OCHUL_STATUS, na=False)
+df["is_nul"]   = df["상태"].astype(str).str.contains(NUL_STATUS,   na=False)
+df["is_of"]    = df["귀책"].astype(str).str.replace(" ","").str.upper().eq(OF_LABEL.upper())
+
+dates = sorted(df["날짜"].dropna().unique().tolist())
+if not dates:
+    st.error("날짜를 해석하지 못했습니다.")
+    st.stop()
+
+# ==============================
+# total.csv 로드
+# ==============================
+totals_df = load_csv_safely(TOTALS_URL)
+totals_map: dict[date,int] = {}
+if not totals_df.empty:
+    totals_df["Total_unit"] = totals_df["Total_unit"].astype(str).str.replace(",","",regex=False)
+    totals_df["Total_unit"] = pd.to_numeric(totals_df["Total_unit"], errors="coerce").fillna(0).astype(int)
+    totals_df["D_date"] = pd.to_datetime(totals_df["D"], errors="coerce").dt.date
+    totals_map = {d:int(u) for d,u in totals_df[["D_date","Total_unit"]].dropna().itertuples(index=False, name=None)}
+
+# ==============================
+# 자연어 입력 + 날짜 선택
+# ==============================
+with st.sidebar:
+    st.header("🔎 자연어 질문")
+    q = st.text_input("예) '오늘 오출율', '어제 누락 요약', '2025/09/27 리포트'")
+    st.caption("질문에 날짜가 없으면 아래 선택값 사용")
+    st.divider()
+    man_date = st.selectbox("📅 날짜 선택", dates, index=len(dates)-1)
+
+parsed = parse_korean_date(q, dates) if q else None
+selected_date = parsed or man_date
+if parsed:
+    st.success(f"🗓 자연어에서 날짜 인식: **{selected_date}**")
+
+# ==============================
+# 선택 일자 요약
+# ==============================
+day = df[df["날짜"] == selected_date].copy()
+if day.empty:
+    st.warning("선택한 날짜 데이터가 없습니다.")
+    st.stop()
+
+den = int(totals_map.get(selected_date, int(day["유닛"].sum()) or 1))
+ochul_all = int(day.loc[day["is_ochul"], "유닛"].sum())
+ochul_of  = int(day.loc[day["is_ochul"] & day["is_of"], "유닛"].sum())
+nul_all   = int(day.loc[day["is_nul"],   "유닛"].sum())
+nul_of    = int(day.loc[day["is_nul"]   & day["is_of"], "유닛"].sum())
+
+act_ochul = (ochul_of  / den) if den else 0.0
+est_ochul = (ochul_all / den) if den else 0.0
+act_nul   = (nul_of    / den) if den else 0.0
+est_nul   = (nul_all   / den) if den else 0.0
+
+st.subheader(f"📌 {selected_date} 요약 (분모={den:,})")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("오출(실제:OF)",  pct(act_ochul), pp(act_ochul - TARGET_OCHUL))
+c2.metric("오출(추정:전체)", pct(est_ochul), pp(est_ochul - TARGET_OCHUL))
+c3.metric("누락(실제:OF)",  pct(act_nul),   pp(act_nul   - TARGET_NUL))
+c4.metric("누락(추정:전체)", pct(est_nul),   pp(est_nul   - TARGET_NUL))
+
+# ==============================
+# 🧮 귀책 제외 What-if (OF 기준)
+# ==============================
+st.markdown("### 🧮 귀책 제외 What-if (선택한 귀책이 발생하지 않았다고 가정, OF 기준 반영)")
+
 blame_options = sorted([b for b in df["귀책"].dropna().astype(str).str.strip().unique().tolist()])
 exclude_blames = st.multiselect(
     "제외할 귀책 선택",
     options=blame_options,
-    help="선택한 귀책을 **제외**하고 오출/누락율을 다시 계산합니다. (분모는 그대로 유지)"
+    help="선택한 귀책을 제외하고 OF 기준 실제 오출/누락율을 재계산합니다."
 )
 
 if exclude_blames:
-    # 제외 마스크
     mask_keep = ~day["귀책"].astype(str).str.strip().isin(exclude_blames)
 
-    # 유닛 재계산 (제외 반영)
-    adj_ochul_all = int(day.loc[mask_keep & day["is_ochul"], "유닛"].sum())
-    adj_ochul_of  = int(day.loc[mask_keep & day["is_ochul"] & day["is_of"], "유닛"].sum())
-    adj_nul_all   = int(day.loc[mask_keep & day["is_nul"],   "유닛"].sum())
-    adj_nul_of    = int(day.loc[mask_keep & day["is_nul"]   & day["is_of"], "유닛"].sum())
+    adj_ochul_of = int(day.loc[mask_keep & day["is_ochul"] & day["is_of"], "유닛"].sum())
+    adj_nul_of   = int(day.loc[mask_keep & day["is_nul"]   & day["is_of"], "유닛"].sum())
 
-    # 비율 재계산
-    adj_est_ochul = (adj_ochul_all / den) if den else 0.0   # 추정 오출율 (전체)
-    adj_act_ochul = (adj_ochul_of  / den) if den else 0.0   # 실제 오출율 (OF)
-    adj_est_nul   = (adj_nul_all   / den) if den else 0.0   # 추정 누락율 (전체)
-    adj_act_nul   = (adj_nul_of    / den) if den else 0.0   # 실제 누락율 (OF)
+    adj_act_ochul = (adj_ochul_of / den) if den else 0.0
+    adj_act_nul   = (adj_nul_of   / den) if den else 0.0
 
-    # 표시
     st.write(f"**제외된 귀책:** {', '.join(exclude_blames)}")
-    colW1, colW2 = st.columns(2)
-    with colW1:
-        st.write("**오출율 변화**")
-        st.metric("실제(OF) → 조정", f"{adj_act_ochul*100:.3f}%", f"{(adj_act_ochul - act_ochul)*100:+.3f} pp")
-        st.metric("추정(전체) → 조정", f"{adj_est_ochul*100:.3f}%", f"{(adj_est_ochul - est_ochul)*100:+.3f} pp")
-        fig_w1 = px.bar(
-            x=["타겟","기존 실제(OF)","조정 실제(OF)","기존 추정(전체)","조정 추정(전체)"],
-            y=[TARGET_OCHUL*100, act_ochul*100, adj_act_ochul*100, est_ochul*100, adj_est_ochul*100],
-            labels={"x":"", "y":"%"},
-            title="오출율 What-if"
-        )
-        st.plotly_chart(fig_w1, use_container_width=True)
 
-    with colW2:
-        st.write("**누락율 변화**")
-        st.metric("실제(OF) → 조정", f"{adj_act_nul*100:.3f}%", f"{(adj_act_nul - act_nul)*100:+.3f} pp")
-        st.metric("추정(전체) → 조정", f"{adj_est_nul*100:.3f}%", f"{(adj_est_nul - est_nul)*100:+.3f} pp")
-        fig_w2 = px.bar(
-            x=["타겟","기존 실제(OF)","조정 실제(OF)","기존 추정(전체)","조정 추정(전체)"],
-            y=[TARGET_NUL*100, act_nul*100, adj_act_nul*100, est_nul*100, adj_est_nul*100],
-            labels={"x":"", "y":"%"},
-            title="누락율 What-if"
-        )
-        st.plotly_chart(fig_w2, use_container_width=True)
-
-    with st.expander("📄 What-if 상세표"):
-        tbl = pd.DataFrame({
-            "항목": ["오출(실제:OF)","오출(추정:전체)","누락(실제:OF)","누락(추정:전체)"],
-            "기존(%)": [act_ochul*100, est_ochul*100, act_nul*100, est_nul*100],
-            "조정(%)": [adj_act_ochul*100, adj_est_ochul*100, adj_act_nul*100, adj_est_nul*100],
-            "변화(pp)": [(adj_act_ochul-act_ochul)*100, (adj_est_ochul-est_ochul)*100,
-                      (adj_act_nul-act_nul)*100, (adj_est_nul-est_nul)*100],
-            "타겟 대비(pp)": [
-                (adj_act_ochul - TARGET_OCHUL)*100,
-                (adj_est_ochul - TARGET_OCHUL)*100,
-                (adj_act_nul   - TARGET_NUL)*100,
-                (adj_est_nul   - TARGET_NUL)*100,
-            ],
-        })
-        st.dataframe(tbl.round(3), use_container_width=True)
+    tbl = pd.DataFrame({
+        "항목": ["오출율(실제:OF)", "누락율(실제:OF)"],
+        "기존(%)": [act_ochul*100, act_nul*100],
+        "조정(%)": [adj_act_ochul*100, adj_act_nul*100],
+        "변화(pp)": [(adj_act_ochul-act_ochul)*100, (adj_act_nul-act_nul)*100],
+        "타겟대비(pp)": [
+            (adj_act_ochul - TARGET_OCHUL)*100,
+            (adj_act_nul - TARGET_NUL)*100
+        ]
+    })
+    st.dataframe(tbl.round(3), use_container_width=True)
 else:
-    st.caption("왼쪽에서 제외할 귀책을 선택하면 What-if 결과가 표시됩니다.")
+    st.caption("왼쪽에서 제외할 귀책을 선택하면 조정 결과가 표시됩니다.")
+
+# ==============================
+# 🧾 사유 TOP
+# ==============================
+st.markdown("### 🧾 사유 TOP")
+reason_top = (
+    day.groupby("사유")["유닛"]
+       .agg(건수="size", 유닛="sum")
+       .reset_index()
+       .rename(columns={"사유": "reason"})
+       .sort_values("유닛", ascending=False)
+)
+st.dataframe(reason_top.head(15), use_container_width=True)
+
+# ==============================
+# 📈 일자별 트래킹
+# ==============================
+daily = (
+    df.groupby("날짜")
+      .apply(lambda x: pd.Series({
+          "오출(전체)": int(x.loc[x["is_ochul"], "유닛"].sum()),
+          "오출(OF)" : int(x.loc[x["is_ochul"] & x["is_of"], "유닛"].sum()),
+          "누락(전체)": int(x.loc[x["is_nul"],   "유닛"].sum()),
+          "누락(OF)" : int(x.loc[x["is_nul"]   & x["is_of"], "유닛"].sum()),
+          "분모":       int(totals_map.get(x.name, int(x["유닛"].sum()) or 1))
+      }))
+      .reset_index().sort_values("날짜")
+)
+if not daily.empty:
+    daily["오출율(실제:OF)"]  = daily["오출(OF)"]   / daily["분모"]
+    daily["누락율(실제:OF)"]  = daily["누락(OF)"]   / daily["분모"]
+    st.markdown("### 📈 트래킹")
+    fig_o = px.line(daily, x="날짜", y=["오출율(실제:OF)"], markers=True, title="오출율 추이")
+    fig_n = px.line(daily, x="날짜", y=["누락율(실제:OF)"], markers=True, title="누락율 추이")
+    for f in (fig_o, fig_n): f.update_yaxes(tickformat=".2%")
+    st.plotly_chart(fig_o, use_container_width=True)
+    st.plotly_chart(fig_n, use_container_width=True)
