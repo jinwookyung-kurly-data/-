@@ -1,20 +1,23 @@
-# -*- coding: utf-8 -*-
-import streamlit as st
-import pandas as pd
-import io
+import chardet
+import requests
 
-# ---------------------------------------------------------
-# 0️⃣ 기본 설정
-# ---------------------------------------------------------
-st.set_page_config(page_title="누락 현황 대시보드", layout="wide")
-
-st.title("🎯 누락 현황 대시보드 (자동 샘플 포함 버전)")
-st.caption("CSV 업로드 또는 기본 샘플 데이터를 사용해 누락 현황을 확인하세요.")
-
-# ---------------------------------------------------------
-# 1️⃣ 샘플 CSV URL 설정 (GitHub raw 링크)
-# ---------------------------------------------------------
-sample_url = "https://raw.githubusercontent.com/jinwookyung-kurly-data/main/오출자동화_test_927.csv"
+def load_csv_safely(url: str) -> pd.DataFrame:
+    try:
+        # GitHub raw 파일 다운로드
+        response = requests.get(url)
+        raw_data = response.content
+        
+        # 인코딩 자동 감지
+        detected = chardet.detect(raw_data)
+        encoding = detected["encoding"] or "utf-8"
+        
+        # 디코딩 후 DataFrame 변환
+        text = raw_data.decode(encoding, errors="replace")
+        df = pd.read_csv(io.StringIO(text))
+        return df
+    except Exception as e:
+        st.error(f"CSV 로드 중 오류 발생: {e}")
+        return pd.DataFrame()
 
 # ---------------------------------------------------------
 # 2️⃣ 파일 업로드 or 샘플 불러오기
@@ -24,8 +27,9 @@ if uploaded_file is not None:
     df = pd.read_csv(uploaded_file, encoding="utf-8-sig")
     st.success("✅ 업로드된 파일이 사용됩니다.")
 else:
-    df = pd.read_csv(sample_url, encoding="utf-8-sig")
+    df = load_csv_safely(sample_url)
     st.info("ℹ️ 샘플 데이터(`오출자동화_test_927.csv`)가 자동으로 로드되었습니다.")
+
 
 # ---------------------------------------------------------
 # 3️⃣ 기본 컬럼 체크
