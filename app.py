@@ -217,6 +217,61 @@ blame_summary = (
 st.dataframe(blame_summary, use_container_width=True)
 
 # ==============================
+# 🔎 (추가) OF기준 작업자 로그 + 작업자별 요약
+# ==============================
+# OF + (교차오배분 or 생산누락)만 사용
+of_fail = day[(day["is_of"]) & (day["is_ochul"] | day["is_nul"])].copy()
+
+st.markdown("### 👷 작업자별 로그 (OF 기준 · 교차오배분/생산누락)")
+if of_fail.empty:
+    st.info("OF 기준의 교차오배분/생산누락 데이터가 없습니다.")
+else:
+    # 보기 좋은 정렬
+    of_fail["포장완료시간"] = of_fail["포장완료시간"].astype(str)
+    tabs = st.tabs(["포장 작업자 로그", "풋월 작업자 로그"])
+
+    # 포장 작업자 로그
+    with tabs[0]:
+        pack_log = of_fail[["포장작업자", "상태", "포장완료시간"]].rename(
+            columns={"포장작업자": "작업자"}
+        ).sort_values(["작업자", "포장완료시간"])
+        st.dataframe(pack_log, use_container_width=True)
+
+    # 풋월 작업자 로그
+    with tabs[1]:
+        put_log = of_fail[["풋월작업자", "상태", "포장완료시간"]].rename(
+            columns={"풋월작업자": "작업자"}
+        ).sort_values(["작업자", "포장완료시간"])
+        st.dataframe(put_log, use_container_width=True)
+
+    # 작업자별 누락/오출 카운트 요약 (건수 & 유닛)
+    st.markdown("### 📦 작업자별 누락/오출 카운트 요약 (OF 기준)")
+    colA, colB = st.columns(2)
+
+    def worker_summary(df_src: pd.DataFrame, worker_col: str) -> pd.DataFrame:
+        g = (
+            df_src.groupby(worker_col)
+                  .apply(lambda x: pd.Series({
+                      "오출건수": int((x["is_ochul"]).sum()),
+                      "누락건수": int((x["is_nul"]).sum()),
+                      "오출유닛": int(x.loc[x["is_ochul"], "유닛"].sum()),
+                      "누락유닛": int(x.loc[x["is_nul"], "유닛"].sum()),
+                  }))
+                  .reset_index()
+                  .rename(columns={worker_col: "작업자"})
+                  .sort_values(["오출건수", "누락건수", "오출유닛", "누락유닛"], ascending=False)
+        )
+        return g
+
+    with colA:
+        st.write("**포장작업자 요약**")
+        st.dataframe(worker_summary(of_fail, "포장작업자"), use_container_width=True)
+
+    with colB:
+        st.write("**풋월작업자 요약**")
+        st.dataframe(worker_summary(of_fail, "풋월작업자"), use_container_width=True)
+
+# ==============================
 # 전체 데이터 보기
 # ==============================
 st.markdown("### 📊 정리된 데이터 열람")
