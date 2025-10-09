@@ -19,9 +19,10 @@ DATA_URL   = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/�
 TOTALS_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/total.csv"
 
 # ==============================
-# 유틸
+# 유틸 함수
 # ==============================
 def load_csv_safely(url: str) -> pd.DataFrame:
+    """GitHub raw csv 안전 로더"""
     try:
         r = requests.get(url)
         r.raise_for_status()
@@ -34,6 +35,7 @@ def load_csv_safely(url: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 def parse_korean_date(q: str, available_dates: list[date]) -> date | None:
+    """'오늘', '어제', '2025.09.27' 등의 입력 파싱"""
     if not q: return None
     q = q.strip()
     today = datetime.today().date()
@@ -54,10 +56,10 @@ def pct(x: float) -> str: return f"{x*100:.3f}%"
 def pp(x: float)  -> str: return f"{x*100:+.3f} pp"
 
 # ==============================
-# 페이지 설정
+# 페이지 기본 설정
 # ==============================
 st.set_page_config(page_title="누락 현황 대시보드", layout="wide")
-st.title("🎯 누락 현황 대시보드 (상태값 요약 + total.csv 연동 완전판)")
+st.title("🎯 누락 현황 대시보드 (유닛 기준 + total.csv 연동)")
 
 st.caption("오출=교차오배분, 누락=생산누락. **실제율=OF귀책만**, **추정율=전체 기준**. "
            "분모(전체 유닛)는 `total.csv`의 `Total_unit`을 우선 사용합니다.")
@@ -83,6 +85,7 @@ if missing:
     st.error(f"❌ CSV 헤더 형식 불일치\n빠진 컬럼: {missing}")
     st.stop()
 
+# 형 변환
 df["유닛"] = pd.to_numeric(df["유닛"], errors="coerce").fillna(0).astype(int)
 df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce").dt.date
 df["is_ochul"] = df["상태"].astype(str).str.contains(OCHUL_STATUS, na=False)
@@ -95,7 +98,7 @@ if not dates:
     st.stop()
 
 # ==============================
-# total.csv 로드 + 날짜 처리
+# total.csv 로드
 # ==============================
 totals_df = load_csv_safely(TOTALS_URL)
 totals_map: dict[date,int] = {}
@@ -108,21 +111,21 @@ if not totals_df.empty:
         totals_map = {d:int(u) for d,u in totals_df[["D_date","Total_unit"]].dropna().itertuples(index=False, name=None)}
 
 # ==============================
-# 자연어 입력 + 날짜 선택
+# 날짜 선택
 # ==============================
 with st.sidebar:
-    st.header("🔎 자연어 질문")
-    q = st.text_input("예) '오늘 오출율', '어제 누락 요약', '2025/09/27 리포트'")
+    st.header("🔎 자연어 날짜 선택")
+    q = st.text_input("예) '오늘', '어제', '2025/09/27'")
     st.divider()
     man_date = st.selectbox("📅 날짜 선택", dates, index=len(dates)-1)
 
 parsed = parse_korean_date(q, dates) if q else None
 selected_date = parsed or man_date
 if parsed:
-    st.success(f"🗓 자연어에서 날짜 인식: **{selected_date}**")
+    st.success(f"🗓 인식된 날짜: **{selected_date}**")
 
 # ==============================
-# 선택 일자 요약
+# 선택 일자 요약 (유닛 기준)
 # ==============================
 day = df[df["날짜"] == selected_date].copy()
 if day.empty:
@@ -148,11 +151,11 @@ c3.metric("누락(실제:OF)",  pct(act_nul),   pp(act_nul   - TARGET_NUL))
 c4.metric("누락(추정:전체)", pct(est_nul),   pp(est_nul   - TARGET_NUL))
 
 # ==============================
-# 🧾 상태값 분포 추가
+# 상태값 요약
 # ==============================
-st.markdown("### 🧩 상태값 요약 (Status Distribution)")
+st.markdown("### 🧩 상태값 요약")
 status_summary = (
-    df["상태"]
+    day["상태"]
       .astype(str)
       .value_counts()
       .reset_index()
@@ -161,16 +164,11 @@ status_summary = (
 st.dataframe(status_summary, use_container_width=True)
 
 # ==============================
-# 🧮 귀책 제외 What-if (추정율 기준)
+# 귀책 제외 What-if (추정율 기준)
 # ==============================
-st.markdown("### 🧮 귀책 제외 What-if (선택한 귀책이 없었다면, 추정율이 어떻게 변하나)")
-
+st.markdown("### 🧮 귀책 제외 What-if (추정율 기준)")
 blame_options = sorted([b for b in df["귀책"].dropna().astype(str).str.strip().unique().tolist()])
-exclude_blames = st.multiselect(
-    "제외할 귀책 선택",
-    options=blame_options,
-    help="선택한 귀책을 제외하고 **추정(전체) 기준** 오출/누락율을 재계산합니다. (분모는 동일)"
-)
+exclude_blames = st.multiselect("제외할 귀책 선택", options=blame_options)
 
 if exclude_blames:
     mask_keep = ~day["귀책"].astype(str).str.strip().isin(exclude_blames)
@@ -197,7 +195,7 @@ else:
     st.caption("왼쪽에서 제외할 귀책을 선택하면 조정 결과가 표시됩니다.")
 
 # ==============================
-# 🧾 사유 TOP + 귀책별 카운트
+# 사유 TOP + 귀책별 요약
 # ==============================
 st.markdown("### 🧾 사유 TOP")
 reason_top = (
@@ -219,7 +217,7 @@ blame_summary = (
 st.dataframe(blame_summary, use_container_width=True)
 
 # ==============================
-# 📊 정리된 데이터 열람
+# 전체 데이터 보기
 # ==============================
 st.markdown("### 📊 정리된 데이터 열람")
 with st.expander("📂 전체 데이터 보기"):
