@@ -100,23 +100,23 @@ if not dates:
 # ==============================
 # total.csv 로드 → 날짜별 분모 맵
 # ==============================
-totals_df = load_csv_safely(TOTALS_URL)
-totals_map: dict[date,int] = {}
-if not totals_df.empty:
-    # 헤더 정리: Y, D, Day, Total_order, Total_unit
-    cols = {c:c.strip() for c in totals_df.columns}
-    totals_df.rename(columns=cols, inplace=True)
-    # 날짜 파싱 (D가 '2024. 1. 1' 형태)
-    if "D" in totals_df.columns:
-        # 쉼표 제거 등 숫자 정리
-        totals_df["Total_unit"] = (
-            totals_df["Total_unit"].astype(str).str.replace(",", "", regex=False)
-        )
-        totals_df["Total_unit"] = pd.to_numeric(totals_df["Total_unit"], errors="coerce").fillna(0).astype(int)
-        totals_df["D_date"] = pd.to_datetime(totals_df["D"], errors="coerce").dt.date
-        totals_map = {d:int(u) for d,u in totals_df[["D_date","Total_unit"]].dropna().itertuples(index=False, name=None)}
-    else:
-        st.warning("`total.csv`에 'D' 컬럼이 없어 분모 매핑을 만들 수 없습니다. (무시하고 진행)")
+# totals_df = load_csv_safely(TOTALS_URL)
+# totals_map: dict[date,int] = {}
+# if not totals_df.empty:
+#     # 헤더 정리: Y, D, Day, Total_order, Total_unit
+#     cols = {c:c.strip() for c in totals_df.columns}
+#     totals_df.rename(columns=cols, inplace=True)
+#     # 날짜 파싱 (D가 '2024. 1. 1' 형태)
+#     if "D" in totals_df.columns:
+#         # 쉼표 제거 등 숫자 정리
+#         totals_df["Total_unit"] = (
+#             totals_df["Total_unit"].astype(str).str.replace(",", "", regex=False)
+#         )
+#         totals_df["Total_unit"] = pd.to_numeric(totals_df["Total_unit"], errors="coerce").fillna(0).astype(int)
+#         totals_df["D_date"] = pd.to_datetime(totals_df["D"], errors="coerce").dt.date
+#         totals_map = {d:int(u) for d,u in totals_df[["D_date","Total_unit"]].dropna().itertuples(index=False, name=None)}
+#     else:
+#         st.warning("`total.csv`에 'D' 컬럼이 없어 분모 매핑을 만들 수 없습니다. (무시하고 진행)")
 
 # ==============================
 # 자연어 + 날짜 선택 + 분모 설정
@@ -164,19 +164,19 @@ c3.metric("누락(실제: OF)",  pct(act_nul),   pp(act_nul   - TARGET_NUL))
 c4.metric("누락(추정: 전체)", pct(est_nul),   pp(est_nul   - TARGET_NUL))
 
 # 비교 막대
-colA, colB = st.columns(2)
-with colA:
-    fig1 = px.bar(x=["타겟","실제(OF)","추정(전체)"],
-                  y=[TARGET_OCHUL*100, act_ochul*100, est_ochul*100],
-                  labels={"x":"", "y":"%"},
-                  title="오출율 비교")
-    st.plotly_chart(fig1, use_container_width=True)
-with colB:
-    fig2 = px.bar(x=["타겟","실제(OF)","추정(전체)"],
-                  y=[TARGET_NUL*100, act_nul*100, est_nul*100],
-                  labels={"x":"", "y":"%"},
-                  title="누락율 비교")
-    st.plotly_chart(fig2, use_container_width=True)
+# colA, colB = st.columns(2)
+# with colA:
+#     fig1 = px.bar(x=["타겟","실제(OF)","추정(전체)"],
+#                   y=[TARGET_OCHUL*100, act_ochul*100, est_ochul*100],
+#                   labels={"x":"", "y":"%"},
+#                   title="오출율 비교")
+#     st.plotly_chart(fig1, use_container_width=True)
+# with colB:
+#     fig2 = px.bar(x=["타겟","실제(OF)","추정(전체)"],
+#                   y=[TARGET_NUL*100, act_nul*100, est_nul*100],
+#                   labels={"x":"", "y":"%"},
+#                   title="누락율 비교")
+#     st.plotly_chart(fig2, use_container_width=True)
 
 # ==============================
 # 🧮 귀책 제외 What-if 시뮬레이터
