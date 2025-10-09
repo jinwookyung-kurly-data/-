@@ -57,11 +57,10 @@ def pp(x: float)  -> str: return f"{x*100:+.3f} pp"
 # 페이지 설정
 # ==============================
 st.set_page_config(page_title="누락 현황 대시보드", layout="wide")
-st.title("🎯 누락 현황 대시보드 (날짜 자동 인식 + total.csv 연동 완전판)")
+st.title("🎯 누락 현황 대시보드 (상태값 요약 + total.csv 연동 완전판)")
 
 st.caption("오출=교차오배분, 누락=생산누락. **실제율=OF귀책만**, **추정율=전체 기준**. "
-           "분모(전체 유닛)는 `total.csv`의 `Total_unit`을 우선 사용합니다. "
-           "날짜 포맷(`2025. 9. 27` vs `2025-09-27`) 자동 매칭됨.")
+           "분모(전체 유닛)는 `total.csv`의 `Total_unit`을 우선 사용합니다.")
 
 # ==============================
 # 데이터 로드
@@ -96,7 +95,7 @@ if not dates:
     st.stop()
 
 # ==============================
-# total.csv 로드 + 날짜 포맷 자동 처리
+# total.csv 로드 + 날짜 처리
 # ==============================
 totals_df = load_csv_safely(TOTALS_URL)
 totals_map: dict[date,int] = {}
@@ -105,12 +104,7 @@ if not totals_df.empty:
     if "Total_unit" in totals_df.columns and "D" in totals_df.columns:
         totals_df["Total_unit"] = totals_df["Total_unit"].astype(str).str.replace(",","",regex=False)
         totals_df["Total_unit"] = pd.to_numeric(totals_df["Total_unit"], errors="coerce").fillna(0).astype(int)
-
-        # 날짜 포맷이 "2025. 9. 27" 같은 경우 처리
-        totals_df["D_str"] = totals_df["D"].astype(str).str.replace(" ", "").str.replace("년","-").str.replace("월","-").str.replace("일","")
-        totals_df["D_str"] = totals_df["D_str"].str.replace(r"[.]", "-", regex=True)
-        totals_df["D_date"] = pd.to_datetime(totals_df["D_str"], errors="coerce").dt.date
-
+        totals_df["D_date"] = pd.to_datetime(totals_df["D"], errors="coerce").dt.date
         totals_map = {d:int(u) for d,u in totals_df[["D_date","Total_unit"]].dropna().itertuples(index=False, name=None)}
 
 # ==============================
@@ -119,7 +113,6 @@ if not totals_df.empty:
 with st.sidebar:
     st.header("🔎 자연어 질문")
     q = st.text_input("예) '오늘 오출율', '어제 누락 요약', '2025/09/27 리포트'")
-    st.caption("질문에 날짜가 없으면 아래 선택값 사용")
     st.divider()
     man_date = st.selectbox("📅 날짜 선택", dates, index=len(dates)-1)
 
@@ -136,9 +129,7 @@ if day.empty:
     st.warning("선택한 날짜 데이터가 없습니다.")
     st.stop()
 
-# ✅ 분모는 해당 일자 total.csv의 Total_unit
 den = int(totals_map.get(selected_date, int(day["유닛"].sum()) or 1))
-
 ochul_all = int(day.loc[day["is_ochul"], "유닛"].sum())
 ochul_of  = int(day.loc[day["is_ochul"] & day["is_of"], "유닛"].sum())
 nul_all   = int(day.loc[day["is_nul"],   "유닛"].sum())
@@ -155,6 +146,19 @@ c1.metric("오출(실제:OF)",  pct(act_ochul), pp(act_ochul - TARGET_OCHUL))
 c2.metric("오출(추정:전체)", pct(est_ochul), pp(est_ochul - TARGET_OCHUL))
 c3.metric("누락(실제:OF)",  pct(act_nul),   pp(act_nul   - TARGET_NUL))
 c4.metric("누락(추정:전체)", pct(est_nul),   pp(est_nul   - TARGET_NUL))
+
+# ==============================
+# 🧾 상태값 분포 추가
+# ==============================
+st.markdown("### 🧩 상태값 요약 (Status Distribution)")
+status_summary = (
+    df["상태"]
+      .astype(str)
+      .value_counts()
+      .reset_index()
+      .rename(columns={"index": "상태", "상태": "건수"})
+)
+st.dataframe(status_summary, use_container_width=True)
 
 # ==============================
 # 🧮 귀책 제외 What-if (추정율 기준)
