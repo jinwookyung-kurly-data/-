@@ -1,224 +1,81 @@
-
 # -*- coding: utf-8 -*-
-import io
-import pandas as pd
 import streamlit as st
-import plotly.express as px
+import pandas as pd
+import io
 
-# =========================
-# Config
-# =========================
+# ---------------------------------------------------------
+# 0️⃣ 기본 설정
+# ---------------------------------------------------------
 st.set_page_config(page_title="누락 현황 대시보드", layout="wide")
 
-TARGET_OCHUL = 0.00019  # 0.019%
-TARGET_NUL   = 0.00041  # 0.041%
-RECOVERABLE_BLAMES_DEFAULT = ["시스템오류","배송귀책","CC팀귀책","공급사귀책","고객귀책"]
+st.title("🎯 누락 현황 대시보드 (자동 샘플 포함 버전)")
+st.caption("CSV 업로드 또는 기본 샘플 데이터를 사용해 누락 현황을 확인하세요.")
 
-REQUIRED_COLS = ["날짜","주문번호","유닛","타입","상태","포장완료시간","분류완료시간","포장작업자","풋월작업자","사유","귀책"]
+# ---------------------------------------------------------
+# 1️⃣ 샘플 CSV URL 설정 (GitHub raw 링크)
+# ---------------------------------------------------------
+sample_url = "https://raw.githubusercontent.com/jinwookyung-kurly-data/main/오출자동화_test_927.csv"
 
-# =========================
-# Helpers
-# =========================
-def normalize_status(v: str) -> str:
-    t = str(v or "").strip().replace(" ", "")
-    if t in ["교차오배분","교차오배분건","교차","오배분"]:
-        return "교차 오배분"
-    if "생산누락" in t:
-        return "생산누락"
-    if "배송누락" in t:
-        return "배송누락"
-    # 그대로
-    return str(v).strip()
-
-def normalize_blame(v: str) -> str:
-    t = str(v or "").strip().lower().replace(" ", "")
-    mapping = [
-        (["of", "of귀책", "of책임"], "OF귀책"),
-        (["시스템", "system", "시스템오류"], "시스템오류"),
-        (["배송", "배송귀책", "delivery"], "배송귀책"),
-        (["cc", "cc팀", "cc팀귀책"], "CC팀귀책"),
-        (["공급사", "vendor", "공급사귀책"], "공급사귀책"),
-        (["확인불가", "불명", "미확인"], "확인불가"),
-        (["고객", "고객귀책"], "고객귀책"),
-    ]
-    for keys, label in mapping:
-        for k in keys:
-            if k in t:
-                return label
-    if t in ("", "nan", "none"):
-        return "미분류"
-    return str(v).strip()
-
-def summarize(df, col):
-    g = df.groupby(col)["유닛"].agg(건수="size", 유닛="sum").reset_index()
-    return g.sort_values(["유닛","건수"], ascending=False)
-
-def pct(x):
-    return f"{x*100:.3f}%"
-
-def pp(x):
-    return f"{x*100:+.3f} pp"
-
-# =========================
-# UI - Sidebar
-# =========================
-st.title("📦 누락 현황 대시보드 (모바일 최적화)")
-st.caption("파일 업로드 → 날짜 선택 → 오출/누락율 & 귀책 요약. 외부 API 미사용.")
-
-with st.sidebar:
-    st.header("1) 데이터 업로드")
-    uploaded = st.file_uploader("CSV 또는 XLSX 업로드 (헤더 필수)", type=["csv","xlsx"])
-    st.markdown("**필수 컬럼 순서는 상관없지만, 컬럼명은 다음과 같아야 합니다.**")
-    st.code(", ".join(REQUIRED_COLS), language="text")
-    st.divider()
-    st.header("2) 옵션")
-    recoverable_blames = st.multiselect("복구 가정 귀책 선택",
-                                        options=["OF귀책","시스템오류","배송귀책","CC팀귀책","공급사귀책","확인불가","고객귀책","미분류"],
-                                        default=RECOVERABLE_BLAMES_DEFAULT)
-    ochul_statuses = st.multiselect("오출로 산정할 상태",
-                                    options=["교차 오배분","생산누락","배송누락"],
-                                    default=["교차 오배분"])
-    nul_statuses   = st.multiselect("누락으로 산정할 상태",
-                                    options=["생산누락","배송누락","교차 오배분"],
-                                    default=["생산누락","배송누락"])
-    st.caption("※ 현장 기준에 맞게 상태/귀책을 조정하세요.")
-
-if not uploaded:
-    st.info("좌측 사이드바에서 파일을 업로드해주세요.")
-    st.stop()
-
-# =========================
-# Load data
-# =========================
-if uploaded.name.endswith(".xlsx"):
-    df = pd.read_excel(uploaded)
+# ---------------------------------------------------------
+# 2️⃣ 파일 업로드 or 샘플 불러오기
+# ---------------------------------------------------------
+uploaded_file = st.file_uploader("CSV 파일을 업로드하세요", type=["csv"])
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file, encoding="utf-8-sig")
+    st.success("✅ 업로드된 파일이 사용됩니다.")
 else:
-    # Try UTF-8-SIG then CP949
-    raw = uploaded.read()
-    try:
-        df = pd.read_csv(io.BytesIO(raw), encoding="utf-8-sig")
-    except Exception:
-        df = pd.read_csv(io.BytesIO(raw), encoding="cp949")
+    df = pd.read_csv(sample_url, encoding="utf-8-sig")
+    st.info("ℹ️ 샘플 데이터(`오출자동화_test_927.csv`)가 자동으로 로드되었습니다.")
 
-missing_cols = [c for c in REQUIRED_COLS if c not in df.columns]
-if missing_cols:
-    st.error(f"다음 컬럼이 누락되었습니다: {', '.join(missing_cols)}")
+# ---------------------------------------------------------
+# 3️⃣ 기본 컬럼 체크
+# ---------------------------------------------------------
+expected_cols = ["날짜", "주문번호", "유닛", "타입", "상태", "포장완료시간", "분류완료시간", "포장작업자", "풋월작업자", "사유", "귀책"]
+if not all(col in df.columns for col in expected_cols):
+    st.error("❌ CSV 형식이 맞지 않습니다. 올바른 헤더를 포함해야 합니다.")
     st.stop()
 
-df = df[REQUIRED_COLS].copy()
-df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce").dt.date
-df["유닛"] = pd.to_numeric(df["유닛"], errors="coerce").fillna(0).astype(int)
-df["상태_std"] = df["상태"].apply(normalize_status)
-df["귀책_std"] = df["귀책"].apply(normalize_blame)
+# ---------------------------------------------------------
+# 4️⃣ 요약 지표 계산
+# ---------------------------------------------------------
+total_units = df["유닛"].sum()
+by_blame = df.groupby("귀책")["유닛"].sum().reset_index().sort_values("유닛", ascending=False)
+by_type = df.groupby("상태")["유닛"].sum().reset_index().sort_values("유닛", ascending=False)
 
-dates = sorted(df["날짜"].dropna().unique())
-if not dates:
-    st.error("날짜 컬럼을 날짜 형식으로 해석하지 못했습니다. 포맷을 YYYY-MM-DD로 맞춰주세요.")
-    st.stop()
+# ---------------------------------------------------------
+# 5️⃣ 타겟 대비 계산
+# ---------------------------------------------------------
+target_오출 = 0.019 / 100
+target_누락 = 0.041 / 100
 
-# =========================
-# Tabs
-# =========================
-tab_day, tab_trend, tab_data = st.tabs(["📅 선택 일자 요약", "📈 추이(멀티일자)", "🗂 데이터/다운로드"])
+total_rows = len(df)
+오출_유닛 = df[df["상태"].str.contains("오출|오배분", na=False)]["유닛"].sum()
+누락_유닛 = df[df["상태"].str.contains("누락", na=False)]["유닛"].sum()
 
-with tab_day:
-    selected_date = st.selectbox("날짜 선택", dates, index=len(dates)-1)
-    day = df[df["날짜"] == selected_date].copy()
-    if day.empty:
-        st.warning("선택한 날짜 데이터가 없습니다.")
-        st.stop()
+오출율 = (오출_유닛 / total_units) if total_units > 0 else 0
+누락율 = (누락_유닛 / total_units) if total_units > 0 else 0
 
-    total_units = int(day["유닛"].sum())
-    total_cases = len(day)
+# ---------------------------------------------------------
+# 6️⃣ 시각화 출력
+# ---------------------------------------------------------
+col1, col2 = st.columns(2)
 
-    ochul_units = int(day[day["상태_std"].isin(ochul_statuses)]["유닛"].sum())
-    nul_units   = int(day[day["상태_std"].isin(nul_statuses)]["유닛"].sum())
-    ochul_rate  = (ochul_units / total_units) if total_units > 0 else 0.0
-    nul_rate    = (nul_units   / total_units) if total_units > 0 else 0.0
+with col1:
+    st.metric("📦 총 유닛 수", f"{total_units:,}")
+    st.metric("🚨 오출율", f"{오출율*100:.3f}%", f"{(오출율-target_오출)*100:.3f}% vs 타겟")
+with col2:
+    st.metric("❗ 누락율", f"{누락율*100:.3f}%", f"{(누락율-target_누락)*100:.3f}% vs 타겟")
 
-    # Recoverable (status-aware)
-    rec_ochul_units = int(day[(day["상태_std"].isin(ochul_statuses)) & (day["귀책_std"].isin(recoverable_blames))]["유닛"].sum())
-    rec_nul_units   = int(day[(day["상태_std"].isin(nul_statuses))   & (day["귀책_std"].isin(recoverable_blames))]["유닛"].sum())
-    hypo_ochul_rate = ((ochul_units - rec_ochul_units) / total_units) if total_units > 0 else 0.0
-    hypo_nul_rate   = ((nul_units   - rec_nul_units)   / total_units) if total_units > 0 else 0.0
+st.subheader("📊 귀책별 유닛 요약")
+st.dataframe(by_blame, use_container_width=True)
 
-    st.subheader(f"📌 {selected_date} 헤드라인")
-    c1,c2,c3,c4 = st.columns(4)
-    c1.metric("전체 건수", f"{total_cases:,}")
-    c2.metric("전체 유닛", f"{total_units:,}")
-    c3.metric("오출 유닛", f"{ochul_units:,}", delta=pp(ochul_rate - TARGET_OCHUL))
-    c4.metric("누락 유닛", f"{nul_units:,}", delta=pp(nul_rate - TARGET_NUL))
+st.subheader("📋 상태별 유닛 요약")
+st.dataframe(by_type, use_container_width=True)
 
-    st.markdown("### 🎯 타겟 대비")
-    cc1, cc2 = st.columns(2)
-    with cc1:
-        st.markdown("**오출율**")
-        st.metric("실제", pct(ochul_rate), delta=pp(ochul_rate - TARGET_OCHUL))
-        st.metric("가정(복구 제외)", pct(hypo_ochul_rate), delta=pp(hypo_ochul_rate - TARGET_OCHUL))
-        fig1 = px.bar(x=["타겟","실제","가정"], y=[TARGET_OCHUL*100, ochul_rate*100, hypo_ochul_rate*100],
-                      labels={"x":"","y":"%"})
-        st.plotly_chart(fig1, use_container_width=True)
-    with cc2:
-        st.markdown("**누락율**")
-        st.metric("실제", pct(nul_rate), delta=pp(nul_rate - TARGET_NUL))
-        st.metric("가정(복구 제외)", pct(hypo_nul_rate), delta=pp(hypo_nul_rate - TARGET_NUL))
-        fig2 = px.bar(x=["타겟","실제","가정"], y=[TARGET_NUL*100, nul_rate*100, hypo_nul_rate*100],
-                      labels={"x":"","y":"%"})
-        st.plotly_chart(fig2, use_container_width=True)
+# ---------------------------------------------------------
+# 7️⃣ 상세 데이터 보기
+# ---------------------------------------------------------
+with st.expander("🔍 원본 데이터 보기"):
+    st.dataframe(df, use_container_width=True)
 
-    st.markdown("### 🧾 세부 요약")
-    t1, t2 = st.columns(2)
-    with t1:
-        st.markdown("**상태별 요약**")
-        st.dataframe(summarize(day, "상태_std"), use_container_width=True)
-        st.markdown("**귀책별 요약**")
-        st.dataframe(summarize(day, "귀책_std"), use_container_width=True)
-    with t2:
-        st.markdown("**사유별 요약**")
-        st.dataframe(summarize(day, "사유"), use_container_width=True)
-        st.markdown("**작업자 요약**")
-        st.dataframe(summarize(day, "포장작업자"), use_container_width=True)
-        st.dataframe(summarize(day, "풋월작업자"), use_container_width=True)
-
-with tab_trend:
-    # Per-day totals and rates
-    daily = (
-        df.assign(날짜=pd.to_datetime(df["날짜"]))
-          .groupby("날짜")
-          .apply(lambda x: pd.Series({
-              "총유닛": int(x["유닛"].sum()),
-              "오출유닛": int(x[x["상태_std"].isin(ochul_statuses)]["유닛"].sum()),
-              "누락유닛": int(x[x["상태_std"].isin(nul_statuses)]["유닛"].sum()),
-              "오출(복구제외)": int(x[(x["상태_std"].isin(ochul_statuses)) & (x["귀책_std"].isin(recoverable_blames))]["유닛"].sum()),
-              "누락(복구제외)": int(x[(x["상태_std"].isin(nul_statuses))   & (x["귀책_std"].isin(recoverable_blames))]["유닛"].sum()),
-          }))
-          .reset_index()
-          .sort_values("날짜")
-    )
-    if not daily.empty:
-        daily["오출율"] = daily.apply(lambda r: (r["오출유닛"]/r["총유닛"]) if r["총유닛"]>0 else 0.0, axis=1)
-        daily["누락율"] = daily.apply(lambda r: (r["누락유닛"]/r["총유닛"]) if r["총유닛"]>0 else 0.0, axis=1)
-        daily["오출율(가정)"] = daily.apply(lambda r: ((r["오출유닛"]-r["오출(복구제외)"])/r["총유닛"]) if r["총유닛"]>0 else 0.0, axis=1)
-        daily["누락율(가정)"] = daily.apply(lambda r: ((r["누락유닛"]-r["누락(복구제외)"])/r["총유닛"]) if r["총유닛"]>0 else 0.0, axis=1)
-
-        st.markdown("#### 일자별 오출/누락율 추이")
-        fig_tr1 = px.line(daily, x="날짜", y=["오출율","오출율(가정)"], markers=True)
-        fig_tr2 = px.line(daily, x="날짜", y=["누락율","누락율(가정)"], markers=True)
-        st.plotly_chart(fig_tr1, use_container_width=True)
-        st.plotly_chart(fig_tr2, use_container_width=True)
-
-        st.markdown("#### 일자별 총괄 표")
-        view = daily.copy()
-        for c in ["오출율","누락율","오출율(가정)","누락율(가정)"]:
-            view[c] = (view[c]*100).round(3)
-        st.dataframe(view, use_container_width=True)
-    else:
-        st.info("여러 날짜가 포함된 파일을 업로드하면 추이를 볼 수 있습니다.")
-
-with tab_data:
-    st.markdown("#### 원본 데이터 미리보기")
-    st.dataframe(df.head(1000), use_container_width=True)
-    # Downloads
-    st.download_button("현재 데이터 CSV 다운로드", data=df.to_csv(index=False).encode("utf-8-sig"),
-                       file_name="data_clean.csv", mime="text/csv")
-    st.caption("※ 업로드한 파일을 정규화(상태/귀책 표준화)한 결과를 다운로드할 수 있습니다.")
+st.caption("※ 오출 타겟 0.019%, 생산 누락 타겟 0.041% 기준으로 계산됩니다.")
