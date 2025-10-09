@@ -57,6 +57,9 @@ rename_map = {
 }
 df.rename(columns=rename_map, inplace=True)
 
+# BOM 제거 및 공백 정리
+df.columns = df.columns.str.replace('\ufeff', '', regex=True).str.strip()
+
 # ---------------------------------------------------------
 # 컬럼 체크
 # ---------------------------------------------------------
