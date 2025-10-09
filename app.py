@@ -3,7 +3,6 @@ import io, re
 from datetime import datetime, date, timedelta
 import chardet
 import pandas as pd
-import plotly.express as px
 import requests
 import streamlit as st
 
@@ -12,9 +11,9 @@ import streamlit as st
 # ==============================
 TARGET_OCHUL = 0.00019   # 0.019%
 TARGET_NUL   = 0.00041   # 0.041%
-OCHUL_STATUS = "교차오배분"   # 오출 산정 기준
-NUL_STATUS   = "생산누락"     # 누락 산정 기준
-OF_LABEL     = "OF귀책"       # 실제율 기준 귀책
+OCHUL_STATUS = "교차오배분"
+NUL_STATUS   = "생산누락"
+OF_LABEL     = "OF귀책"
 
 DATA_URL   = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/오출자동화_test_927.csv"
 TOTALS_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/total.csv"
@@ -72,7 +71,6 @@ if uploaded is None:
     st.info("샘플 데이터를 사용합니다.")
 else:
     st.success("업로드된 파일 사용 중.")
-
 
 # 컬럼 정규화
 rename_map = {"포장완료로":"포장완료시간","분류완료로":"분류완료시간","포장완료":"포장완료시간","분류완료":"분류완료시간"}
@@ -199,25 +197,12 @@ reason_top = (
 st.dataframe(reason_top.head(15), use_container_width=True)
 
 # ==============================
-# 📈 일자별 트래킹
+# 📊 정리된 데이터 열람
 # ==============================
-daily = (
-    df.groupby("날짜")
-      .apply(lambda x: pd.Series({
-          "오출(전체)": int(x.loc[x["is_ochul"], "유닛"].sum()),
-          "오출(OF)" : int(x.loc[x["is_ochul"] & x["is_of"], "유닛"].sum()),
-          "누락(전체)": int(x.loc[x["is_nul"],   "유닛"].sum()),
-          "누락(OF)" : int(x.loc[x["is_nul"]   & x["is_of"], "유닛"].sum()),
-          "분모":       int(totals_map.get(x.name, int(x["유닛"].sum()) or 1))
-      }))
-      .reset_index().sort_values("날짜")
-)
-if not daily.empty:
-    daily["오출율(실제:OF)"]  = daily["오출(OF)"]   / daily["분모"]
-    daily["누락율(실제:OF)"]  = daily["누락(OF)"]   / daily["분모"]
-    st.markdown("### 📈 트래킹")
-    fig_o = px.line(daily, x="날짜", y=["오출율(실제:OF)"], markers=True, title="오출율 추이")
-    fig_n = px.line(daily, x="날짜", y=["누락율(실제:OF)"], markers=True, title="누락율 추이")
-    for f in (fig_o, fig_n): f.update_yaxes(tickformat=".2%")
-    st.plotly_chart(fig_o, use_container_width=True)
-    st.plotly_chart(fig_n, use_container_width=True)
+st.markdown("### 📊 정리된 데이터 열람")
+
+with st.expander("📂 전체 데이터 보기"):
+    st.dataframe(df, use_container_width=True, height=500)
+
+with st.expander("📅 선택 일자 데이터 보기"):
+    st.dataframe(day, use_container_width=True, height=400)
