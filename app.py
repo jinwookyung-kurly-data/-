@@ -59,7 +59,7 @@ def pp(x: float)  -> str: return f"{x*100:+.3f} pp"
 # 페이지 기본 설정
 # ==============================
 st.set_page_config(page_title="누락 현황 대시보드", layout="wide")
-st.title("🎯 누락 현황 대시보드 (유닛 기준 + total.csv 연동)")
+st.title("누락 현황 대시보드 ")
 
 st.caption("오출=교차오배분, 누락=생산누락. **실제율=OF귀책만**, **추정율=전체 기준**. "
            "분모(전체 유닛)는 `total.csv`의 `Total_unit`을 우선 사용합니다.")
@@ -143,7 +143,7 @@ est_ochul = (ochul_all / den) if den else 0.0
 act_nul   = (nul_of    / den) if den else 0.0
 est_nul   = (nul_all   / den) if den else 0.0
 
-st.subheader(f"📌 {selected_date} 요약 (분모={den:,})")
+st.subheader(f"📌 {selected_date} 요약 (총 Unit={den:,})")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("오출(실제:OF)",  pct(act_ochul), pp(act_ochul - TARGET_OCHUL))
 c2.metric("오출(추정:전체)", pct(est_ochul), pp(est_ochul - TARGET_OCHUL))
