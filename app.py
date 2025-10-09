@@ -72,7 +72,6 @@ if uploaded is None:
 else:
     st.success("업로드된 파일 사용 중.")
 
-
 # 컬럼 정리
 rename_map = {"포장완료로":"포장완료시간","분류완료로":"분류완료시간","포장완료":"포장완료시간","분류완료":"분류완료시간"}
 df.rename(columns=rename_map, inplace=True)
@@ -148,29 +147,37 @@ c3.metric("누락(실제:OF)",  pct(act_nul),   pp(act_nul   - TARGET_NUL))
 c4.metric("누락(추정:전체)", pct(est_nul),   pp(est_nul   - TARGET_NUL))
 
 # ==============================
-# 🧮 귀책 제외 What-if
+# 🧮 귀책 제외 What-if (추정율 기준: 전체)
 # ==============================
-st.markdown("### 🧮 귀책 제외 What-if (OF 기준)")
+st.markdown("### 🧮 귀책 제외 What-if (선택한 귀책이 **없었다면**, 추정율이 어떻게 변하나)")
 
 blame_options = sorted([b for b in df["귀책"].dropna().astype(str).str.strip().unique().tolist()])
-exclude_blames = st.multiselect("제외할 귀책 선택", options=blame_options)
+exclude_blames = st.multiselect(
+    "제외할 귀책 선택",
+    options=blame_options,
+    help="선택한 귀책을 제외하고 **추정(전체) 기준** 오출/누락율을 재계산합니다. (분모는 동일)"
+)
 
 if exclude_blames:
     mask_keep = ~day["귀책"].astype(str).str.strip().isin(exclude_blames)
-    adj_ochul_of = int(day.loc[mask_keep & day["is_ochul"] & day["is_of"], "유닛"].sum())
-    adj_nul_of   = int(day.loc[mask_keep & day["is_nul"]   & day["is_of"], "유닛"].sum())
 
-    adj_act_ochul = (adj_ochul_of / den) if den else 0.0
-    adj_act_nul   = (adj_nul_of   / den) if den else 0.0
+    # ✅ 전체(추정) 기준으로 재집계: is_of 조건 사용하지 않음
+    adj_ochul_all = int(day.loc[mask_keep & day["is_ochul"], "유닛"].sum())
+    adj_nul_all   = int(day.loc[mask_keep & day["is_nul"],   "유닛"].sum())
+
+    adj_est_ochul = (adj_ochul_all / den) if den else 0.0
+    adj_est_nul   = (adj_nul_all   / den) if den else 0.0
+
+    st.write(f"**제외된 귀책:** {', '.join(exclude_blames)}")
 
     tbl = pd.DataFrame({
-        "항목": ["오출율(실제:OF)", "누락율(실제:OF)"],
-        "기존(%)": [act_ochul*100, act_nul*100],
-        "조정(%)": [adj_act_ochul*100, adj_act_nul*100],
-        "변화(pp)": [(adj_act_ochul-act_ochul)*100, (adj_act_nul-act_nul)*100],
+        "항목": ["오출율(추정:전체)", "누락율(추정:전체)"],
+        "기존(%)": [est_ochul*100, est_nul*100],
+        "조정(%)": [adj_est_ochul*100, adj_est_nul*100],
+        "변화(pp)": [(adj_est_ochul-est_ochul)*100, (adj_est_nul-est_nul)*100],
         "타겟대비(pp)": [
-            (adj_act_ochul - TARGET_OCHUL)*100,
-            (adj_act_nul - TARGET_NUL)*100
+            (adj_est_ochul - TARGET_OCHUL)*100,
+            (adj_est_nul   - TARGET_NUL)*100
         ]
     })
     st.dataframe(tbl.round(3), use_container_width=True)
