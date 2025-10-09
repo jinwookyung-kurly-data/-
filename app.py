@@ -57,7 +57,7 @@ def pp(x: float)  -> str: return f"{x*100:+.3f} pp"
 # 페이지 설정
 # ==============================
 st.set_page_config(page_title="누락 현황 대시보드", layout="wide")
-st.title("🎯 누락 현황 대시보드 (자연어 + total.csv 연동 + 귀책 제외 & 사유 TOP)")
+st.title("🎯 누락 현황 대시보드 (자연어 + total.csv 연동 + 귀책 제외 & 사유 TOP + 귀책별 카운트)")
 
 st.caption("오출=교차오배분, 누락=생산누락. **실제율=OF귀책만**, **추정율=전체 기준**. "
            "분모(전체 유닛)는 `total.csv`의 `Total_unit`을 우선 사용합니다.")
@@ -65,14 +65,11 @@ st.caption("오출=교차오배분, 누락=생산누락. **실제율=OF귀책만
 # ==============================
 # 데이터 로드
 # ==============================
-uploaded = st.file_uploader("CSV 업로드 (헤더: 날짜,주문번호,유닛,타입,상태,포장완료시간,분류완료시간,포장작업자,풋월작업자,사유,귀책)", type=["csv"])
+uploaded = st.file_uploader("CSV 업로드", type=["csv"])
 df = pd.read_csv(uploaded, encoding="utf-8-sig") if uploaded else load_csv_safely(DATA_URL)
-if uploaded is None:
-    st.info("샘플 데이터를 사용합니다.")
-else:
-    st.success("업로드된 파일 사용 중.")
+st.info("샘플 데이터를 사용합니다.") if uploaded is None else st.success("업로드된 파일 사용 중.")
 
-# 컬럼 정규화
+# 컬럼 정리
 rename_map = {"포장완료로":"포장완료시간","분류완료로":"분류완료시간","포장완료":"포장완료시간","분류완료":"분류완료시간"}
 df.rename(columns=rename_map, inplace=True)
 df.columns = df.columns.str.replace("\ufeff","",regex=True).str.strip()
@@ -80,13 +77,13 @@ df.columns = df.columns.str.replace("\ufeff","",regex=True).str.strip()
 expected = ["날짜","주문번호","유닛","타입","상태","포장완료시간","분류완료시간","포장작업자","풋월작업자","사유","귀책"]
 missing = [c for c in expected if c not in df.columns]
 if missing:
-    st.error(f"❌ CSV 헤더 형식 불일치\n빠진 컬럼: {missing}\n감지된 헤더: {list(df.columns)}")
+    st.error(f"❌ CSV 헤더 형식 불일치\n빠진 컬럼: {missing}")
     st.stop()
 
 df["유닛"] = pd.to_numeric(df["유닛"], errors="coerce").fillna(0).astype(int)
 df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce").dt.date
 df["is_ochul"] = df["상태"].astype(str).str.contains(OCHUL_STATUS, na=False)
-df["is_nul"]   = df["상태"].astype(str).str.contains(NUL_STATUS,   na=False)
+df["is_nul"]   = df["상태"].astype(str).str.contains(NUL_STATUS, na=False)
 df["is_of"]    = df["귀책"].astype(str).str.replace(" ","").str.upper().eq(OF_LABEL.upper())
 
 dates = sorted(df["날짜"].dropna().unique().tolist())
@@ -147,27 +144,20 @@ c3.metric("누락(실제:OF)",  pct(act_nul),   pp(act_nul   - TARGET_NUL))
 c4.metric("누락(추정:전체)", pct(est_nul),   pp(est_nul   - TARGET_NUL))
 
 # ==============================
-# 🧮 귀책 제외 What-if (OF 기준)
+# 🧮 귀책 제외 What-if
 # ==============================
-st.markdown("### 🧮 귀책 제외 What-if (선택한 귀책이 발생하지 않았다고 가정, OF 기준 반영)")
+st.markdown("### 🧮 귀책 제외 What-if (OF 기준)")
 
 blame_options = sorted([b for b in df["귀책"].dropna().astype(str).str.strip().unique().tolist()])
-exclude_blames = st.multiselect(
-    "제외할 귀책 선택",
-    options=blame_options,
-    help="선택한 귀책을 제외하고 OF 기준 실제 오출/누락율을 재계산합니다."
-)
+exclude_blames = st.multiselect("제외할 귀책 선택", options=blame_options)
 
 if exclude_blames:
     mask_keep = ~day["귀책"].astype(str).str.strip().isin(exclude_blames)
-
     adj_ochul_of = int(day.loc[mask_keep & day["is_ochul"] & day["is_of"], "유닛"].sum())
     adj_nul_of   = int(day.loc[mask_keep & day["is_nul"]   & day["is_of"], "유닛"].sum())
 
     adj_act_ochul = (adj_ochul_of / den) if den else 0.0
     adj_act_nul   = (adj_nul_of   / den) if den else 0.0
-
-    st.write(f"**제외된 귀책:** {', '.join(exclude_blames)}")
 
     tbl = pd.DataFrame({
         "항목": ["오출율(실제:OF)", "누락율(실제:OF)"],
@@ -195,6 +185,18 @@ reason_top = (
        .sort_values("유닛", ascending=False)
 )
 st.dataframe(reason_top.head(15), use_container_width=True)
+
+# ==============================
+# ⚙️ 귀책별 카운트
+# ==============================
+st.markdown("### ⚙️ 귀책별 카운트 요약")
+blame_summary = (
+    day.groupby("귀책")["유닛"]
+       .agg(건수="size", 유닛합계="sum")
+       .reset_index()
+       .sort_values("유닛합계", ascending=False)
+)
+st.dataframe(blame_summary, use_container_width=True)
 
 # ==============================
 # 📊 정리된 데이터 열람
