@@ -57,10 +57,11 @@ def pp(x: float)  -> str: return f"{x*100:+.3f} pp"
 # 페이지 설정
 # ==============================
 st.set_page_config(page_title="누락 현황 대시보드", layout="wide")
-st.title("🎯 누락 현황 대시보드 (자연어 + total.csv 연동 + 귀책 제외 & 사유 TOP + 귀책별 카운트)")
+st.title("🎯 누락 현황 대시보드 (날짜 자동 인식 + total.csv 연동 완전판)")
 
 st.caption("오출=교차오배분, 누락=생산누락. **실제율=OF귀책만**, **추정율=전체 기준**. "
-           "분모(전체 유닛)는 `total.csv`의 `Total_unit`을 우선 사용합니다.")
+           "분모(전체 유닛)는 `total.csv`의 `Total_unit`을 우선 사용합니다. "
+           "날짜 포맷(`2025. 9. 27` vs `2025-09-27`) 자동 매칭됨.")
 
 # ==============================
 # 데이터 로드
@@ -86,7 +87,7 @@ if missing:
 df["유닛"] = pd.to_numeric(df["유닛"], errors="coerce").fillna(0).astype(int)
 df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce").dt.date
 df["is_ochul"] = df["상태"].astype(str).str.contains(OCHUL_STATUS, na=False)
-df["is_nul"]   = df["상태"].astype(str).str.contains(NUL_STATUS, na=False)
+df["is_nul"]   = df["상태"].astype(str).str.contains(NUL_STATUS,   na=False)
 df["is_of"]    = df["귀책"].astype(str).str.replace(" ","").str.upper().eq(OF_LABEL.upper())
 
 dates = sorted(df["날짜"].dropna().unique().tolist())
@@ -95,15 +96,22 @@ if not dates:
     st.stop()
 
 # ==============================
-# total.csv 로드
+# total.csv 로드 + 날짜 포맷 자동 처리
 # ==============================
 totals_df = load_csv_safely(TOTALS_URL)
 totals_map: dict[date,int] = {}
 if not totals_df.empty:
-    totals_df["Total_unit"] = totals_df["Total_unit"].astype(str).str.replace(",","",regex=False)
-    totals_df["Total_unit"] = pd.to_numeric(totals_df["Total_unit"], errors="coerce").fillna(0).astype(int)
-    totals_df["D_date"] = pd.to_datetime(totals_df["D"], errors="coerce").dt.date
-    totals_map = {d:int(u) for d,u in totals_df[["D_date","Total_unit"]].dropna().itertuples(index=False, name=None)}
+    totals_df.columns = totals_df.columns.str.strip()
+    if "Total_unit" in totals_df.columns and "D" in totals_df.columns:
+        totals_df["Total_unit"] = totals_df["Total_unit"].astype(str).str.replace(",","",regex=False)
+        totals_df["Total_unit"] = pd.to_numeric(totals_df["Total_unit"], errors="coerce").fillna(0).astype(int)
+
+        # 날짜 포맷이 "2025. 9. 27" 같은 경우 처리
+        totals_df["D_str"] = totals_df["D"].astype(str).str.replace(" ", "").str.replace("년","-").str.replace("월","-").str.replace("일","")
+        totals_df["D_str"] = totals_df["D_str"].str.replace(r"[.]", "-", regex=True)
+        totals_df["D_date"] = pd.to_datetime(totals_df["D_str"], errors="coerce").dt.date
+
+        totals_map = {d:int(u) for d,u in totals_df[["D_date","Total_unit"]].dropna().itertuples(index=False, name=None)}
 
 # ==============================
 # 자연어 입력 + 날짜 선택
@@ -128,7 +136,9 @@ if day.empty:
     st.warning("선택한 날짜 데이터가 없습니다.")
     st.stop()
 
+# ✅ 분모는 해당 일자 total.csv의 Total_unit
 den = int(totals_map.get(selected_date, int(day["유닛"].sum()) or 1))
+
 ochul_all = int(day.loc[day["is_ochul"], "유닛"].sum())
 ochul_of  = int(day.loc[day["is_ochul"] & day["is_of"], "유닛"].sum())
 nul_all   = int(day.loc[day["is_nul"],   "유닛"].sum())
@@ -147,9 +157,9 @@ c3.metric("누락(실제:OF)",  pct(act_nul),   pp(act_nul   - TARGET_NUL))
 c4.metric("누락(추정:전체)", pct(est_nul),   pp(est_nul   - TARGET_NUL))
 
 # ==============================
-# 🧮 귀책 제외 What-if (추정율 기준: 전체)
+# 🧮 귀책 제외 What-if (추정율 기준)
 # ==============================
-st.markdown("### 🧮 귀책 제외 What-if (선택한 귀책이 **없었다면**, 추정율이 어떻게 변하나)")
+st.markdown("### 🧮 귀책 제외 What-if (선택한 귀책이 없었다면, 추정율이 어떻게 변하나)")
 
 blame_options = sorted([b for b in df["귀책"].dropna().astype(str).str.strip().unique().tolist()])
 exclude_blames = st.multiselect(
@@ -160,8 +170,6 @@ exclude_blames = st.multiselect(
 
 if exclude_blames:
     mask_keep = ~day["귀책"].astype(str).str.strip().isin(exclude_blames)
-
-    # ✅ 전체(추정) 기준으로 재집계: is_of 조건 사용하지 않음
     adj_ochul_all = int(day.loc[mask_keep & day["is_ochul"], "유닛"].sum())
     adj_nul_all   = int(day.loc[mask_keep & day["is_nul"],   "유닛"].sum())
 
@@ -185,7 +193,7 @@ else:
     st.caption("왼쪽에서 제외할 귀책을 선택하면 조정 결과가 표시됩니다.")
 
 # ==============================
-# 🧾 사유 TOP
+# 🧾 사유 TOP + 귀책별 카운트
 # ==============================
 st.markdown("### 🧾 사유 TOP")
 reason_top = (
@@ -197,9 +205,6 @@ reason_top = (
 )
 st.dataframe(reason_top.head(15), use_container_width=True)
 
-# ==============================
-# ⚙️ 귀책별 카운트
-# ==============================
 st.markdown("### ⚙️ 귀책별 카운트 요약")
 blame_summary = (
     day.groupby("귀책")["유닛"]
@@ -213,9 +218,7 @@ st.dataframe(blame_summary, use_container_width=True)
 # 📊 정리된 데이터 열람
 # ==============================
 st.markdown("### 📊 정리된 데이터 열람")
-
 with st.expander("📂 전체 데이터 보기"):
     st.dataframe(df, use_container_width=True, height=500)
-
 with st.expander("📅 선택 일자 데이터 보기"):
     st.dataframe(day, use_container_width=True, height=400)
