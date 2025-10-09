@@ -69,7 +69,11 @@ st.caption("오출=교차오배분, 누락=생산누락. **실제율=OF귀책만
 # ==============================
 uploaded = st.file_uploader("CSV 업로드 (헤더: 날짜,주문번호,유닛,타입,상태,포장완료시간,분류완료시간,포장작업자,풋월작업자,사유,귀책)", type=["csv"])
 df = pd.read_csv(uploaded, encoding="utf-8-sig") if uploaded else load_csv_safely(DATA_URL)
-st.info("샘플 데이터를 사용합니다.") if uploaded is None else st.success("업로드된 파일 사용 중.")
+if uploaded is None:
+    st.info("샘플 데이터를 사용합니다.")
+else:
+    st.success("업로드된 파일 사용 중.")
+
 
 # 컬럼 정규화
 rename_map = {"포장완료로":"포장완료시간","분류완료로":"분류완료시간","포장완료":"포장완료시간","분류완료":"분류완료시간"}
