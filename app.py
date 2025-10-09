@@ -33,7 +33,7 @@ st.caption("CSV 업로드 또는 샘플 데이터를 사용하여 오출/누락 
 # ---------------------------------------------------------
 # 샘플 데이터 URL
 # ---------------------------------------------------------
-sample_url = "https://raw.githubusercontent.com/jinwookyung-kurly-data/main/오출자동화_test_927.csv"
+sample_url = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/오출자동화_test_927.csv"
 
 # ---------------------------------------------------------
 # 파일 업로드 or 샘플 사용
