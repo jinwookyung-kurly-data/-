@@ -16,7 +16,7 @@ NUL_STATUS   = "생산누락"
 OF_LABEL     = "OF귀책"
 
 DATA_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/오출자동화.csv"
-TOTALS_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/total.csv"
+TOTALS_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/total.csv
 
 # ==============================
 # 유틸 함수
