@@ -15,7 +15,7 @@ OCHUL_STATUS = "교차오배분"
 NUL_STATUS   = "생산누락"
 OF_LABEL     = "OF귀책"
 
-DATA_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/blob/main/오출자동화.csv"
+DATA_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/main/오출자동화.csv"
 TOTALS_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/total.csv"
 
 # ==============================
