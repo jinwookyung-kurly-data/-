@@ -168,8 +168,8 @@ totals_map = build_totals_map(totals_df)
 # 날짜 선택
 # ==============================
 with st.sidebar:
-    st.header("🔎 자연어 날짜 선택")
-    q = st.text_input("예) '오늘', '어제', '2025/09/27'")
+    st.header("🔎 자연어 날짜 선택(비어있을 땐 드롭박스 사용 가능)")
+    q = st.text_input("예) '오늘', '어제', '2025.09.27'")
     st.divider()
     man_date = st.selectbox("📅 날짜 선택", dates, index=len(dates)-1)
 
