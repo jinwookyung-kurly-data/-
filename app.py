@@ -98,8 +98,8 @@ def build_totals_map(totals_df: pd.DataFrame) -> dict:
 # ==============================
 # 페이지 기본 설정
 # ==============================
-st.set_page_config(page_title="오출 및 누락 현황 대시보드", layout="wide")
-st.title("오출 및 누락 현황 대시보드 ")
+st.set_page_config(page_title="오출 누락 KPI 타겟 계산", layout="wide")
+st.title("오출 누락 KPI 타겟 계산 ")
 
 st.caption(
     "오출=교차오배분, 누락=생산누락. **실제율=OF귀책만**, **추정율=전체 기준**. "
