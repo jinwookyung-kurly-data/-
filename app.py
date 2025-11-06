@@ -107,36 +107,6 @@ st.caption(
     "아래에서 **total.csv도 업로드**할 수 있습니다."
 )
 
-# ==============================
-# 데이터 로드 (본 데이터 + total.csv)
-# ==============================
-col_up1, col_up2 = st.columns([2, 1])
-with col_up1:
-    uploaded = st.file_uploader("📄 누락/오출 CSV 업로드", type=["csv"], key="data_csv")
-with col_up2:
-    uploaded_totals = st.file_uploader("📈 total.csv 업로드 (선택)", type=["csv"], key="totals_csv")
-
-# 본 데이터
-df = pd.read_csv(uploaded, encoding="utf-8-sig") if uploaded else load_csv_from_url(DATA_URL)
-if uploaded is None:
-    st.info("샘플 데이터를 사용합니다.")
-else:
-    st.success("업로드된 파일 사용 중.")
-
-# total.csv
-if uploaded_totals is not None:
-    try:
-        totals_df = pd.read_csv(uploaded_totals, encoding="utf-8-sig")
-        st.success("업로드된 total.csv 사용 중.")
-    except Exception:
-        totals_df = pd.read_csv(uploaded_totals)  # 인코딩 자동
-        st.success("업로드된 total.csv 사용 중.")
-else:
-    totals_df = load_csv_from_url(TOTALS_URL)
-    if totals_df.empty:
-        st.warning("total.csv 를 찾지 못했습니다. 당일 분모는 업로드 CSV의 유닛 합계를 사용합니다.")
-    else:
-        st.info("샘플 total.csv 사용 중.")
 
 # 컬럼 정리
 rename_map = {"포장완료로":"포장완료시간","분류완료로":"분류완료시간","포장완료":"포장완료시간","분류완료":"분류완료시간"}
@@ -332,3 +302,37 @@ with st.expander("📂 전체 데이터 보기"):
     st.dataframe(df, use_container_width=True, height=500)
 with st.expander("📅 선택 일자 데이터 보기"):
     st.dataframe(day, use_container_width=True, height=400)
+
+
+
+
+# ==============================
+# 데이터 로드 (본 데이터 + total.csv)
+# ==============================
+col_up1, col_up2 = st.columns([2, 1])
+with col_up1:
+    uploaded = st.file_uploader("📄 누락/오출 CSV 업로드", type=["csv"], key="data_csv")
+with col_up2:
+    uploaded_totals = st.file_uploader("📈 total.csv 업로드 (선택)", type=["csv"], key="totals_csv")
+
+# 본 데이터
+df = pd.read_csv(uploaded, encoding="utf-8-sig") if uploaded else load_csv_from_url(DATA_URL)
+if uploaded is None:
+    st.info("데이터 사용합니다.")
+else:
+    st.success("업로드된 파일 사용 중.")
+
+# total.csv
+if uploaded_totals is not None:
+    try:
+        totals_df = pd.read_csv(uploaded_totals, encoding="utf-8-sig")
+        st.success("업로드된 total.csv 사용 중.")
+    except Exception:
+        totals_df = pd.read_csv(uploaded_totals)  # 인코딩 자동
+        st.success("업로드된 total.csv 사용 중.")
+else:
+    totals_df = load_csv_from_url(TOTALS_URL)
+    if totals_df.empty:
+        st.warning("total.csv 를 찾지 못했습니다. 당일 분모는 업로드 CSV의 유닛 합계를 사용합니다.")
+    else:
+        st.info("데이터 사용 중.")
