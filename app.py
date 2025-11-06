@@ -18,22 +18,6 @@ OF_LABEL     = "OF귀책"
 DATA_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/오출자동화.csv"
 TOTALS_URL = "https://raw.githubusercontent.com/jinwookyung-kurly-data/-/main/total.csv"
 
-# ==============================
-# 유틸 함수
-# ==============================
-def load_csv_from_url(url: str) -> pd.DataFrame:
-    """GitHub raw csv 안전 로더"""
-    try:
-        r = requests.get(url)
-        r.raise_for_status()
-        raw = r.content
-        enc = (chardet.detect(raw).get("encoding") or "utf-8")
-        text = raw.decode(enc, errors="replace")
-        return pd.read_csv(io.StringIO(text))
-    except Exception as e:
-        st.warning(f"⚠️ {url} 로드 실패: {e}")
-        return pd.DataFrame()
-
 def parse_korean_date(q: str, available_dates: list[date]) -> date | None:
     """'오늘', '어제', '2025.09.27' 등의 입력 파싱"""
     if not q: return None
@@ -332,3 +316,23 @@ with st.expander("📂 전체 데이터 보기"):
     st.dataframe(df, use_container_width=True, height=500)
 with st.expander("📅 선택 일자 데이터 보기"):
     st.dataframe(day, use_container_width=True, height=400)
+
+
+
+
+
+# ==============================
+# 유틸 함수
+# ==============================
+def load_csv_from_url(url: str) -> pd.DataFrame:
+    """GitHub raw csv 안전 로더"""
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        raw = r.content
+        enc = (chardet.detect(raw).get("encoding") or "utf-8")
+        text = raw.decode(enc, errors="replace")
+        return pd.read_csv(io.StringIO(text))
+    except Exception as e:
+        st.warning(f"⚠️ {url} 로드 실패: {e}")
+        return pd.DataFrame()
