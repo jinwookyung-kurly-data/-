@@ -7,6 +7,22 @@ import requests
 import streamlit as st
 
 # ==============================
+# 유틸 함수
+# ==============================
+def load_csv_from_url(url: str) -> pd.DataFrame:
+    """GitHub raw csv 안전 로더"""
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        raw = r.content
+        enc = (chardet.detect(raw).get("encoding") or "utf-8")
+        text = raw.decode(enc, errors="replace")
+        return pd.read_csv(io.StringIO(text))
+    except Exception as e:
+        st.warning(f"⚠️ {url} 로드 실패: {e}")
+        return pd.DataFrame()
+
+# ==============================
 # 상수 / 경로
 # ==============================
 TARGET_OCHUL = 0.00019   # 0.019%
@@ -316,23 +332,3 @@ with st.expander("📂 전체 데이터 보기"):
     st.dataframe(df, use_container_width=True, height=500)
 with st.expander("📅 선택 일자 데이터 보기"):
     st.dataframe(day, use_container_width=True, height=400)
-
-
-
-
-
-# ==============================
-# 유틸 함수
-# ==============================
-def load_csv_from_url(url: str) -> pd.DataFrame:
-    """GitHub raw csv 안전 로더"""
-    try:
-        r = requests.get(url)
-        r.raise_for_status()
-        raw = r.content
-        enc = (chardet.detect(raw).get("encoding") or "utf-8")
-        text = raw.decode(enc, errors="replace")
-        return pd.read_csv(io.StringIO(text))
-    except Exception as e:
-        st.warning(f"⚠️ {url} 로드 실패: {e}")
-        return pd.DataFrame()
