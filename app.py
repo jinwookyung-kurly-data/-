@@ -138,7 +138,7 @@ else:
     if totals_df.empty:
         st.warning("total.csv 를 찾지 못했습니다. 당일 분모는 업로드 CSV의 유닛 합계를 사용합니다.")
     else:
-        st.info("서버 데이터 사용 중.")
+        st.info("서버 데이터 사용 중")
 
 
 # 컬럼 정리
