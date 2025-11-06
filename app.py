@@ -121,7 +121,7 @@ with col_up2:
 # 본 데이터
 df = pd.read_csv(uploaded, encoding="utf-8-sig") if uploaded else load_csv_from_url(DATA_URL)
 if uploaded is None:
-    st.info("데이터 사용합니다.")
+    st.info("서버 데이터 사용 중")
 else:
     st.success("업로드된 파일 사용 중.")
 
@@ -138,7 +138,7 @@ else:
     if totals_df.empty:
         st.warning("total.csv 를 찾지 못했습니다. 당일 분모는 업로드 CSV의 유닛 합계를 사용합니다.")
     else:
-        st.info("데이터 사용 중.")
+        st.info("서버 데이터 사용 중.")
 
 
 # 컬럼 정리
